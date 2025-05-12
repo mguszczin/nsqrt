@@ -9,37 +9,37 @@ global nsqrt
     ; this macro uses rax, rcx, rdx (caller must preserve if needed)
 
     cmp %2, %4
-    je %%only_prev              ; if i == n then only Q[i - 1]
+    je %%only_prev                  ; if i == n then only Q[i - 1]
 
-    mov %5, [%1 + 8*%2]         ; r = Q[i]
+    mov %5, [%1 + 8*%2]             ; r = Q[i]
     jmp %%shift
 
 %%only_prev:
-    xor %5, %5                  ; r = 0 (Q[i] = 0)
+    xor %5, %5                      ; r = 0 (Q[i] = 0)
 
 %%shift:
     test %3, %3
-    jz %%done                   ; if shift == 0, skip rest
+    jz %%done                       ; if shift == 0, skip rest
 
-    mov     rax, %5             ; rax = Q[i] or 0
+    mov     rax, %5                 ; rax = Q[i] or 0
     mov     cl, %3b           
-    shl     rax, cl             ; rax = Q[i] << shift
+    shl     rax, cl                 ; rax = Q[i] << shift
 
     cmp     %2, 0
-    je      %%no_prev           ; if i == 0 -> no Q[i - 1]
+    je      %%no_prev               ; if i == 0 -> no Q[i - 1]
 
     mov     rcx, [%1 + 8*%2 - 8]    ; rcx = Q[i - 1]
     mov     rdx, 64
     sub     rdx, %3
-    mov     cl, dl              ; cl = (64 - shift)
-    shr     rcx, cl             ; rcx >> (64 - shift)
+    mov     cl, dl                  ; cl = (64 - shift)
+    shr     rcx, cl                 ; rcx >> (64 - shift)
 
-    or      rax, rcx            ; get final value 
+    or      rax, rcx                ; get final value 
     mov     %5, rax
     jmp     %%done
 
 %%no_prev:
-    mov     %5, rax             ; just use shifted Q[i] (Q[i - 1] = 0)
+    mov     %5, rax                 ; just use shifted Q[i] (Q[i - 1] = 0)
 
 %%done:
 %endmacro
@@ -116,25 +116,83 @@ nsqrt:
 
     jmp .compare            ; compare T_{i - 1} and R_{i - 1}
 .main_check:
-
+    test rax, rax         
+    jz .main_loop           ; if rax == 0 -> .main_loop
+    .jmp substract
 .compare 
     mov r11, r9             ; set j = BlockCount for compare_loop
-    add r11, r9             ; add block_move
 
     test r10, r10           ; check if r10 = 0
     setz al                 ; al = 1 if r10 = 0
     sub r11, al             ; j-- if r10 = 0
+    
+    ; handle some edge case where X[j + blockmove + 1] > 0
+    ; edge case: there is a non-zero word above
+    ; not sure if it happens
+
+    ; compute (idx) rax = j + block_move + 1
+    lea   rax, [r11 + r9 + 1]   
+    mov   rcx, r15
+    shl   rcx, 1             ; rcx = 2 * block_count
+
+    cmp   rax, rcx
+    jae   .compare_loop      ; if rax >= totalWords, skip edge-check
+
+    ; load X[idx]
+    mov   rdx, [r14 + rax*BLOCK_SIZE]
+    test  rdx, rdx
+    jz    .compare_loop      ; if X[idx] == 0, no edge-case
+
+    mov   rax, 1
+    jmp   .main_check
 
 .compare_loop:
     CALC_BLOCK r13, r11, r9, rbx, rax   ; use macro to calc j-th block
 
     mov rcx, r11            
-    add rcx, r9             ;
+    add rcx, r9                         ; rcx = j + block_move 
+    
+    mov rdi, [r14 + rcx * BLOCK_SIZE]   ; get X[j + block_move]
+    sub rdi, rax                        ; X[j + block_move] - (j-th block)
+    test rdi, rdi                       ; if result != 0 -> we have answer
+    jnz .compare_exit
 
-.compare_check:
+    test r11, r11
+    jz .compare_exit                    ; if j == 0 finish
+    dec r11                             ; j--
+    jmp .compare_loop
 
-.compare_exit:    
-.substract
+.compare_exit:
+    cmp     rdi, 0
+    setge   al                         ; al = 1 if signed (X–v)>=0, else 0
+    movzx   rax, al                    ; RAX = 0 or 1
+    jmp .main_check
+
+.substract:
+    xor r11, r11                       ; j = 0
+    clc                                ; CF = 0
+
+.substract_loop_check: 
+    jc .substract_loop                 ; if Cf = 1 -> loop again
+    cmp r11, r15                       ; check j < n
+    jl .substract_loop                 ; if j < n -> loop again
+    jmp .exit_substract_loop
+
+.substract_loop:
+    CALC_BLOCK r13, r11, r9, rbx, rax  ; macro to get j-th block
+
+    mov rcx, r11
+    add rcx, r9                        ; rcx = j + block_move
+
+    mov rdi, [r14 + rcx * BLOCK_SIZE]  ; get X[j + block_move]
+    sbb rdi, rax                       ; X[j + block_move] - (j-th block)
+    mov [r14 + rcx * BLOCK_SIZE], rdi  ; new value of X[j + block_move]
+
+    inc r11                            ; j++
+    jmp substract_loop_check           ; check conditions
+
+.exit_substract_loop:
+    jmp .main_exit_loop                ; TODO : EXIT MAIN
 
 .exit
     ; get back to the old value of callee safe registers
