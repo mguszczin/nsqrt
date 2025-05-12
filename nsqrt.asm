@@ -44,6 +44,39 @@ global nsqrt
 %%done:
 %endmacro
 
+%macro SET_BIT 4
+    ; %1 = output pointer
+    ; %2 = bit index
+    ; %3 = total bits
+    ; %4 = bit value (0 or 1), must be in a register
+    ; temp register (clobbers: rax, rcx, rdx, rdi)
+
+    mov     rax, %3            ; rax = n
+    sub     rax, %2            ; rax = n - i
+    mov     rcx, rax           ; rcx = bit index in block
+
+    shr     rax, 6             ; rax = block index
+    and     rcx, BLOCK_MODULO  ; rcx = bit position in block (0–63)
+
+    mov     rdi, 1
+    shl     rdi, cl            ; rdi = 1 << bit_index
+
+    mov     rdx, [%1 + rax*8]  ; load target Q[block_index]
+
+    test    %4, %4
+    jz      %%clear_bit
+
+    or      rdx, rdi           ; set the bit
+    jmp     %%store
+
+%%clear_bit:
+    not     rdi
+    and     rdx, rdi           ; clear the bit
+
+%%store:
+    mov     [%1 + rax*8], rdx  ; store updated block
+%endmacro
+
 section .rodata
 
 BLOCK_MODULO equ 63  ; value to get modulo of 64
@@ -115,10 +148,18 @@ nsqrt:
     jg .exit                ; if true exit loop
 
     jmp .compare            ; compare T_{i - 1} and R_{i - 1}
+    
 .main_check:
     test rax, rax         
-    jz .main_loop           ; if rax == 0 -> .main_loop
-    .jmp substract
+    jz main_loop         ; if rax == 0 -> .main_loop
+    jmp .substract
+
+.main_set_ans_loop:
+    ; set 2^{n - i}
+    mov al, 1                       ; set bit to 1
+    SET_BIT r13, r8, rbx, al        ; Q, i, totalBits, value, tempReg
+    jmp .main_loop                  ; continue main loop
+
 .compare 
     mov r11, r9             ; set j = BlockCount for compare_loop
 
@@ -127,7 +168,6 @@ nsqrt:
     sub r11, al             ; j-- if r10 = 0
     
     ; handle some edge case where X[j + blockmove + 1] > 0
-    ; edge case: there is a non-zero word above
     ; not sure if it happens
 
     ; compute (idx) rax = j + block_move + 1
@@ -164,7 +204,7 @@ nsqrt:
 
 .compare_exit:
     cmp     rdi, 0
-    setge   al                         ; al = 1 if signed (X–v)>=0, else 0
+    setae   al                         ; al = 1 if signed (X–v)>=0, else 0
     movzx   rax, al                    ; RAX = 0 or 1
     jmp .main_check
 
@@ -192,7 +232,7 @@ nsqrt:
     jmp substract_loop_check           ; check conditions
 
 .exit_substract_loop:
-    jmp .main_exit_loop                ; TODO : EXIT MAIN
+    jmp .main_set_ans_loop             
 
 .exit
     ; get back to the old value of callee safe registers
