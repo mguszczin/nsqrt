@@ -1,11 +1,12 @@
 global nsqrt
 
-%macro CALC_BLOCK 5
+%macro CALC_BLOCK 6
     ; %1 = pointer to Q 
     ; %2 = index of calculated block (i)
     ; %3 = how many bits to shift (0 ≤ shift < 64)
     ; %4 = total block count (n)
     ; %5 = output register
+    ; %6 = 2^{n - i + 1} (for edge case)
     ; this macro uses rax, rcx, rdx (caller must preserve if needed)
 
     cmp %2, %4
@@ -21,22 +22,30 @@ global nsqrt
     test %3, %3
     jz %%done                       ; if shift == 0, skip rest
 
-    mov     rax, %5                 ; rax = Q[i] or 0
-    mov     cl, %3b           
-    shl     rax, cl                 ; rax = Q[i] << shift
+    mov rax, %5                 ; rax = Q[i] or 0
+    mov cl, %3b           
+    shl rax, cl                 ; rax = Q[i] << shift
 
-    cmp     %2, 0
-    je      %%no_prev               ; if i == 0 -> no Q[i - 1]
+    cmp %2, 0
+    je %%no_prev               ; if i == 0 -> no Q[i - 1]
 
-    mov     rcx, [%1 + 8*%2 - 8]    ; rcx = Q[i - 1]
-    mov     rdx, 64
-    sub     rdx, %3
-    mov     cl, dl                  ; cl = (64 - shift)
-    shr     rcx, cl                 ; rcx >> (64 - shift)
+    mov rcx, [%1 + 8*%2 - 8]    ; rcx = Q[i - 1]
+    mov rdx, 64
+    sub rdx, %3
+    mov cl, dl                  ; cl = (64 - shift)
+    shr rcx, cl                 ; rcx >> (64 - shift)
 
-    or      rax, rcx                ; get final value 
-    mov     %5, rax
-    jmp     %%done
+    or  rax, rcx                ; get final value 
+    mov %5, rax
+
+    cmp %6, %4                   ; if j == n &&i == 0 we have edge case
+    jne %%done
+
+    test %2, %2
+    jnz %%done 
+
+    inc %5                      ; final block++                 
+    jmp %%done
 
 %%no_prev:
     mov     %5, rax                 ; just use shifted Q[i] (Q[i - 1] = 0)
@@ -51,30 +60,30 @@ global nsqrt
     ; %4 = bit value (0 or 1), must be in a register
     ; temp register (clobbers: rax, rcx, rdx, rdi)
 
-    mov     rax, %3            ; rax = n
-    sub     rax, %2            ; rax = n - i
-    mov     rcx, rax           ; rcx = bit index in block
+    mov rax, %3            ; rax = n
+    sub rax, %2            ; rax = n - i
+    mov rcx, rax           ; rcx = bit index in block
 
-    shr     rax, 6             ; rax = block index
-    and     rcx, BLOCK_MODULO  ; rcx = bit position in block (0–63)
+    shr rax, 6             ; rax = block index
+    and rcx, BLOCK_MODULO  ; rcx = bit position in block (0–63)
 
-    mov     rdi, 1
-    shl     rdi, cl            ; rdi = 1 << bit_index
+    mov rdi, 1
+    shl rdi, cl            ; rdi = 1 << bit_index
 
-    mov     rdx, [%1 + rax*8]  ; load target Q[block_index]
+    mov rdx, [%1 + rax*8]  ; load target Q[block_index]
 
-    test    %4, %4
-    jz      %%clear_bit
+    test %4, %4
+    jz %%clear_bit
 
-    or      rdx, rdi           ; set the bit
-    jmp     %%store
+    or rdx, rdi           ; set the bit
+    jmp %%store
 
 %%clear_bit:
-    not     rdi
-    and     rdx, rdi           ; clear the bit
+    not rdi
+    and rdx, rdi           ; clear the bit
 
 %%store:
-    mov     [%1 + rax*8], rdx  ; store updated block
+    mov [%1 + rax*8], rdx  ; store updated block
 %endmacro
 
 section .rodata
@@ -92,7 +101,7 @@ get_zero:
 .loop:
     cmp ecx, esi                        ; i < blockCount
     jge .exit                           ; exit loop 
-    mov qword [rdi + ecx*BLOCK_SIZE], 0 ; get the i-th block
+    mov qword [rdi + rcx*BLOCK_SIZE], 0 ; get the i-th block
     inc ecx                             ; i++
     jmp .loop                           ; get back
 .exit:
@@ -147,25 +156,44 @@ nsqrt:
     cmp r8, rbx             ; check i > n
     jg .exit                ; if true exit loop
 
+    mov r11, r8             ; r11 = r8
+    test r11, r11          
+    jz .compare             ; if r11 == 0 -> compare (edge case)
+    dec r11
+    mov al, 1 
+    ;set 2^{n - i - 1} (4^n after moving)            
+    SET_BIT r13, r11, rbx, al
+
     jmp .compare            ; compare T_{i - 1} and R_{i - 1}
     
 .main_check:
     test rax, rax         
-    jz main_loop         ; if rax == 0 -> .main_loop
+    jz .main_finish         ; if rax == 0 -> .main_loop
     jmp .substract
 
-.main_set_ans_loop:
+.main_set_ans:
     ; set 2^{n - i}
     mov al, 1                       ; set bit to 1
-    SET_BIT r13, r8, rbx, al        ; Q, i, totalBits, value, tempReg
-    jmp .main_loop                  ; continue main loop
+    SET_BIT r13, r8, rbx, al        ; Q, i, totalBits, value
+    jmp .main_finish                ; exit 
 
-.compare 
+.main_finish:
+    mov r11, r8                     ; r11 = r8
+    test r11, r11          
+    jz .main_loop                   ; if r11 == 0 -> main_loop (edge case)
+    dec r11
+    mov al, 0                       ; set bit to zero
+
+    ;unset set 2^{n - i - 1} (4^n after moving)            
+    SET_BIT r13, r11, rbx, al
+    jmp .main_loop
+.compare: 
     mov r11, r9             ; set j = BlockCount for compare_loop
 
     test r10, r10           ; check if r10 = 0
     setz al                 ; al = 1 if r10 = 0
-    sub r11, al             ; j-- if r10 = 0
+    movzx rax, al           ; zero-extend al to rax (or use mov rax, al if you're sure al is 0 or 1)
+    sub r11, rax            ; subtract 1 or 0 from r11
     
     ; handle some edge case where X[j + blockmove + 1] > 0
     ; not sure if it happens
@@ -187,7 +215,8 @@ nsqrt:
     jmp   .main_check
 
 .compare_loop:
-    CALC_BLOCK r13, r11, r9, rbx, rax   ; use macro to calc j-th block
+    ; use macro to calc j-th block
+    CALC_BLOCK r13, r11, r10, rbx, rax, r8 
 
     mov rcx, r11            
     add rcx, r9                         ; rcx = j + block_move 
@@ -219,7 +248,8 @@ nsqrt:
     jmp .exit_substract_loop
 
 .substract_loop:
-    CALC_BLOCK r13, r11, r9, rbx, rax  ; macro to get j-th block
+    ; macro to get j-th block
+    CALC_BLOCK r13, r11, r10, rbx, rax, r8 
 
     mov rcx, r11
     add rcx, r9                        ; rcx = j + block_move
@@ -229,12 +259,12 @@ nsqrt:
     mov [r14 + rcx * BLOCK_SIZE], rdi  ; new value of X[j + block_move]
 
     inc r11                            ; j++
-    jmp substract_loop_check           ; check conditions
+    jmp .substract_loop_check           ; check conditions
 
 .exit_substract_loop:
-    jmp .main_set_ans_loop             
+    jmp .main_set_ans             
 
-.exit
+.exit:
     ; get back to the old value of callee safe registers
     pop     r15
     pop     r14
