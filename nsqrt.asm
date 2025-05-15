@@ -3,7 +3,7 @@ global nsqrt
 %macro CALC_BLOCK 6
     ; %1 = pointer to Q 
     ; %2 = index of calculated block (i)
-    ; %3 = how many bits to shift (0 ≤ shift < 64)
+    ; %3 = how many bits to shift (0 <= shift < 64)
     ; %4 = total block count (n)
     ; %5 = output register
     ; %6 = 2^{n - i + 1} (for edge case)
@@ -37,7 +37,7 @@ global nsqrt
 
     or  rax, rcx                ; get final value 
     mov %5, rax
-
+                                ; BUG TO FIX - I = 0 EXEC EARLIER
     cmp %6, %4                   ; if j == n &&i == 0 we have edge case
     jne %%done
 
@@ -64,11 +64,11 @@ global nsqrt
     sub rax, %2            ; rax = n - i
     mov rcx, rax           ; rcx = bit index in block
 
-    shr rax, 6             ; rax = block index
-    and rcx, BLOCK_MODULO  ; rcx = bit position in block (0–63)
+    shr rax, 6             ; rax = block index (n - i)/64
+    and rcx, BLOCK_MODULO  ; rcx = bit_position in block (0–63) (n - i) % 64
 
     mov rdi, 1
-    shl rdi, cl            ; rdi = 1 << bit_index
+    shl rdi, cl            ; rdi = 1 << bit_position
 
     mov rdx, [%1 + rax*8]  ; load target Q[block_index]
 
@@ -94,15 +94,15 @@ BLOCK_SIZE equ 8     ; size of block
 section .text
 
 ; void get_zero(uint64_t *Q, uint64_t blockCount)
-; rdi = Q, esi = blockCount
+; rdi = Q, rsi = blockCount
 ; sets all 64-bit blocks to zero 
 get_zero:
-    xor ecx, ecx                        ; ecx = i = 0
+    xor rcx, rcx                        ; rcx = i = 0
 .loop:
-    cmp ecx, esi                        ; i < blockCount
+    cmp rcx, rsi                        ; i < blockCount
     jge .exit                           ; exit loop 
-    mov qword [rdi + rcx*BLOCK_SIZE], 0 ; get the i-th block
-    inc ecx                             ; i++
+    mov qword [rdi + rcx*8], 0 ; get the i-th block
+    inc rcx                             ; i++
     jmp .loop                           ; get back
 .exit:
     ret        
@@ -112,6 +112,7 @@ get_zero:
 ; rsi = pointer to input value
 ; rdx number of bytes
 ; returns Q^2 <= X^2 <= (Q + 1)^2
+
 ; use of callee safe registers:
 ; rbx = n (number of bits)
 ; r13 = Q (pointer to Q)
@@ -120,7 +121,6 @@ get_zero:
 nsqrt:
     ; push all the callee safe registers on stack
     push    rbx
-    push    rbp
     push    r13
     push    r14
     push    r15
@@ -146,20 +146,18 @@ nsqrt:
 .main_loop:
     mov r9, rbx             ; get n
     sub r9, r8              ; get (n - i + 1)
-    shr r9, 8               ; set r9 to shift of T_{i - 1} / BLOCK_SIZE
+    shr r9, 8               ; set r9 to shift of T_{i - 1} / BLOCK_SIZE (block_move)
 
     mov r10, rbx            ; get n
     sub r10, r8             ; get (n - i + 1)
     and r10, BLOCK_MODULO   ; set r10 to shift of T_{i - 1} % BLOCK_SIZE
 
     inc r8                  ; i++
-    cmp r8, rbx             ; check i > n
-    jg .exit                ; if true exit loop
 
-    mov r11, r8             ; r11 = r8
+    mov r11, r8             ; r11 = r8 = i
     test r11, r11          
     jz .compare             ; if r11 == 0 -> compare (edge case)
-    dec r11
+    inc r11                 ; r11++ = i++ 
     mov al, 1 
     ;set 2^{n - i - 1} (4^n after moving)            
     SET_BIT r13, r11, rbx, al
@@ -168,7 +166,7 @@ nsqrt:
     
 .main_check:
     test rax, rax         
-    jz .main_finish         ; if rax == 0 -> .main_loop
+    jz .main_finish         ; if rax == 0 -> .main_finish
     jmp .substract
 
 .main_set_ans:
@@ -180,15 +178,15 @@ nsqrt:
 .main_finish:
     mov r11, r8                     ; r11 = r8
     test r11, r11          
-    jz .main_loop                   ; if r11 == 0 -> main_loop (edge case)
-    dec r11
+    jz .exit                        ; if r11 == 0 -> we can finish
+    inc r11
     mov al, 0                       ; set bit to zero
 
     ;unset set 2^{n - i - 1} (4^n after moving)            
     SET_BIT r13, r11, rbx, al
     jmp .main_loop
 .compare: 
-    mov r11, r9             ; set j = BlockCount for compare_loop
+    mov r11, r9             ; set r11 = j = BlockCount for compare_loop
 
     test r10, r10           ; check if r10 = 0
     setz al                 ; al = 1 if r10 = 0
@@ -200,8 +198,8 @@ nsqrt:
 
     ; compute (idx) rax = j + block_move + 1
     lea   rax, [r11 + r9 + 1]   
-    mov   rcx, r15
-    shl   rcx, 1             ; rcx = 2 * block_count
+    mov   rcx, r15           ; get block_count
+    shl   rcx, 1             ; rcx = 2 * block_count = totalWords
 
     cmp   rax, rcx
     jae   .compare_loop      ; if rax >= totalWords, skip edge-check
@@ -211,7 +209,7 @@ nsqrt:
     test  rdx, rdx
     jz    .compare_loop      ; if X[idx] == 0, no edge-case
 
-    mov   rax, 1
+    mov   rax, 1             ; else X[idx] > 0 , we have answer
     jmp   .main_check
 
 .compare_loop:
@@ -255,11 +253,11 @@ nsqrt:
     add rcx, r9                        ; rcx = j + block_move
 
     mov rdi, [r14 + rcx * BLOCK_SIZE]  ; get X[j + block_move]
-    sbb rdi, rax                       ; X[j + block_move] - (j-th block)
+    sbb rdi, rax                       ; X[j + block_move] - (j-th block) - flag
     mov [r14 + rcx * BLOCK_SIZE], rdi  ; new value of X[j + block_move]
 
     inc r11                            ; j++
-    jmp .substract_loop_check           ; check conditions
+    jmp .substract_loop_check          ; check conditions
 
 .exit_substract_loop:
     jmp .main_set_ans             
@@ -269,7 +267,6 @@ nsqrt:
     pop     r15
     pop     r14
     pop     r13
-    pop     rbp
     pop     rbx
     ret
 
