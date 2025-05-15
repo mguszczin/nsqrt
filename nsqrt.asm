@@ -6,8 +6,8 @@ global nsqrt
     ; %3 = how many bits to shift (0 <= shift < 64)
     ; %4 = total block count (n)
     ; %5 = output register
-    ; %6 = 2^{n - i + 1} (for edge case)
-    ; this macro uses rax, rcx, rdx (caller must preserve if needed)
+    ; %6 = j from 2^{n - j + 1} (for edge case)
+    ; this macro uses rax, rcx, rdx, rdi (caller must preserve if needed)
 
     cmp %2, %4
     je %%only_prev                  ; if i == n then only Q[i - 1]
@@ -22,33 +22,28 @@ global nsqrt
     test %3, %3
     jz %%done                       ; if shift == 0, skip rest
 
-    mov rax, %5                 ; rax = Q[i] or 0
-    mov cl, %3b           
-    shl rax, cl                 ; rax = Q[i] << shift
+    mov rax, %5                     ; rax = Q[i] or 0
+    mov rcx, %3                     ; rcx = shift 
+    shl rax, cl                     ; rax = Q[i] << shift
 
     cmp %2, 0
-    je %%no_prev               ; if i == 0 -> no Q[i - 1]
+    je %%no_prev                    ; if i == 0 -> no Q[i - 1]
 
-    mov rcx, [%1 + 8*%2 - 8]    ; rcx = Q[i - 1]
+    mov rdi, [%1 + 8*%2 - 8]        ; rdi = Q[i - 1]
     mov rdx, 64
     sub rdx, %3
-    mov cl, dl                  ; cl = (64 - shift)
-    shr rcx, cl                 ; rcx >> (64 - shift)
+    mov cl, dl                      ; cl = (64 - shift)
+    shr rdi, cl                     ; rdi >> (64 - shift)
 
-    or  rax, rcx                ; get final value 
-    mov %5, rax
-                                ; BUG TO FIX - I = 0 EXEC EARLIER
-    cmp %6, %4                   ; if j == n &&i == 0 we have edge case
-    jne %%done
-
-    test %2, %2
-    jnz %%done 
-
-    inc %5                      ; final block++                 
+    or  rax, rdi                    ; get final value 
+    mov %5, rax           
     jmp %%done
 
 %%no_prev:
-    mov     %5, rax                 ; just use shifted Q[i] (Q[i - 1] = 0)
+    mov %5, rax                     ; just use shifted Q[i] (Q[i - 1] = 0)
+    cmp %6, %4                      ; if j == n &&i == 0 we have edge case
+    jne %%done
+    inc %5                          ; final block++          
 
 %%done:
 %endmacro
@@ -101,7 +96,7 @@ get_zero:
 .loop:
     cmp rcx, rsi                        ; i < blockCount
     jge .exit                           ; exit loop 
-    mov qword [rdi + rcx*8], 0 ; get the i-th block
+    mov qword [rdi + rcx*8], 0          ; get the i-th block
     inc rcx                             ; i++
     jmp .loop                           ; get back
 .exit:
@@ -132,7 +127,7 @@ nsqrt:
 
     ; set arguments for call_zero
     mov rax, rdx            ; rax = n (bytes)
-    shr rax, 3              ; divide by 8 → 64-bit block count
+    shr rax, 6              ; divide by 64 → 64-bit block count
     mov rsi, rax            ; rsi = block count for get_zero
 
     mov r15, rsi            ; set block count
@@ -146,7 +141,7 @@ nsqrt:
 .main_loop:
     mov r9, rbx             ; get n
     sub r9, r8              ; get (n - i + 1)
-    shr r9, 8               ; set r9 to shift of T_{i - 1} / BLOCK_SIZE (block_move)
+    shr r9, 6               ; set r9 to shift of T_{i - 1} / BLOCK_SIZE (block_move)
 
     mov r10, rbx            ; get n
     sub r10, r8             ; get (n - i + 1)
@@ -176,9 +171,9 @@ nsqrt:
     jmp .main_finish                ; exit 
 
 .main_finish:
-    mov r11, r8                     ; r11 = r8
-    test r11, r11          
-    jz .exit                        ; if r11 == 0 -> we can finish
+    test r8, r9          
+    je .exit                        ; if i == n -> we can finish
+    mov r11, r8                     ; r11 = r8 = i 
     inc r11
     mov al, 0                       ; set bit to zero
 
