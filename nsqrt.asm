@@ -4,20 +4,22 @@ global nsqrt
     ; %1 = pointer to Q 
     ; %2 = index of calculated block (i)
     ; %3 = how many bits to shift (0 <= shift < 64)
-    ; %4 = total block count (n)
+    ; %4 = total bit count (n)
     ; %5 = output register
     ; %6 = j from 2^{n - j + 1} (for edge case)
     ; this macro uses rax, rcx, rdx, rdi (caller must preserve if needed)
 
-    cmp %2, %4
-    je %%only_prev                  ; if i == n then only Q[i - 1]
-
+    mov rax, %4
+    shr rax, 6                      ; get block_count
+    cmp %2, rax 
+    je %%only_prev                  ; if i == block_count then only Q[i - 1]        
+    ja %%debug_info
     mov %5, [%1 + 8*%2]             ; r = Q[i]
     jmp %%shift
 
 %%only_prev:
     xor %5, %5                      ; r = 0 (Q[i] = 0)
-
+ 
 %%shift:
     test %3, %3
     jz %%done                       ; if shift == 0, skip rest
@@ -38,13 +40,13 @@ global nsqrt
     or  rax, rdi                    ; get final value 
     mov %5, rax           
     jmp %%done
-
+%%debug_info: 
+    mov rcx, 1
 %%no_prev:
     mov %5, rax                     ; just use shifted Q[i] (Q[i - 1] = 0)
     cmp %6, %4                      ; if j == n &&i == 0 we have edge case
     jne %%done
-    inc %5                          ; final block++          
-
+    inc %5                          ; final block++       
 %%done:
 %endmacro
 
@@ -235,7 +237,7 @@ nsqrt:
     test r10, r10                      ; check if r10 = 0
     setz al                            ; al = 1 if r10 = 0
     movzx rax, al                      ; zero-extend al to rax (or use mov rax, al if you're sure al is 0 or 1)
-    sub r12, rax                       ; subtract 1 or 0 from r11
+    sub r12, rax                       ; subtract 1 or 0 from r12
 
     xor r11, r11                       ; j = 0
     clc                                ; CF = 0
@@ -243,7 +245,7 @@ nsqrt:
 
 .substract_loop_check: 
     jc .substract_loop                 ; if Cf = 1 -> loop again
-    cmp r15, r11                       ; check j != block_count
+    cmp r12, r11                       ; check j != block_count
     jae .substract_loop                ; if block_count >= j -> loop again
     jmp .exit_substract_loop
 

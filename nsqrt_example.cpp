@@ -46,7 +46,8 @@ int main(int argc, char *args[]) {
          << args[0] << " 64 0\n"
          << args[0] << " 128 1000000\n"
          << args[0] << " 256 0x12ab\n"
-         << args[0] << " 640 -1\n";
+         << args[0] << " 640 -1\n"
+         << args[0] << " 640 1\n";
     return 1;
   }
 
