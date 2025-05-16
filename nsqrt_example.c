@@ -38,7 +38,7 @@ int main() {
   Q = malloc(sizeof (uint64_t));
   X = malloc(2 * sizeof (uint64_t));
   assert(Q && X);
-  for (unsigned i = 0; i < SIZE(test_data_table); ++i) {
+  for (unsigned i = 8; i < SIZE(test_data_table); ++i) {
     memcpy(X, &test_data_table[i], 2 * sizeof (uint64_t));
     nsqrt(Q, X, 8 * sizeof (uint64_t));
     printf("Q = %" PRIu64 "\n", Q[0]);

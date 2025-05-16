@@ -1,0 +1,22 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug nsqrt_example_64",
+      "type": "cppdbg",                     
+      "request": "launch",
+      "program": "${workspaceFolder}/nsqrt_example_64",
+      "stopAtEntry": true,
+      "cwd": "${workspaceFolder}",
+      "MIMode": "gdb",                     
+      "miDebuggerPath": "/usr/bin/gdb",     
+      "setupCommands": [
+        {
+          "description": "Use Intel assembly syntax",
+          "text": "-gdb-set disassembly-flavor intel",
+          "ignoreFailures": true
+        }
+      ]
+    }
+  ]
+}

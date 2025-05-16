@@ -53,19 +53,19 @@ global nsqrt
     ; %2 = bit index
     ; %3 = total bits
     ; %4 = bit value (0 or 1), must be in a register
-    ; temp register (clobbers: rax, rcx, rdx, rdi)
+    ; temp register (clobbers: rsi, rcx, rdx, rdi)
 
-    mov rax, %3            ; rax = n
-    sub rax, %2            ; rax = n - i
-    mov rcx, rax           ; rcx = bit index in block
+    mov rsi, %3            ; rsi = n
+    sub rsi, %2            ; rsi = n - i
+    mov rcx, rsi           ; rcx = bit index in block
 
-    shr rax, 6             ; rax = block index (n - i)/64
+    shr rsi, 6             ; rsi = block index (n - i)/64
     and rcx, BLOCK_MODULO  ; rcx = bit_position in block (0–63) (n - i) % 64
 
     mov rdi, 1
     shl rdi, cl            ; rdi = 1 << bit_position
 
-    mov rdx, [%1 + rax*8]  ; load target Q[block_index]
+    mov rdx, [%1 + rsi*8]  ; load target Q[block_index]
 
     test %4, %4
     jz %%clear_bit
@@ -78,7 +78,7 @@ global nsqrt
     and rdx, rdi           ; clear the bit
 
 %%store:
-    mov [%1 + rax*8], rdx  ; store updated block
+    mov [%1 + rsi*8], rdx  ; store updated block
 %endmacro
 
 section .rodata
@@ -150,8 +150,8 @@ nsqrt:
     inc r8                  ; i++
 
     mov r11, r8             ; r11 = r8 = i
-    test r11, r11          
-    jz .compare             ; if r11 == 0 -> compare (edge case)
+    cmp r8, rbx             ; check i == n          
+    je .compare             ; if i == n -> compare (edge case)
     inc r11                 ; r11++ = i++ 
     mov al, 1 
     ;set 2^{n - i - 1} (4^n after moving)            
@@ -171,7 +171,7 @@ nsqrt:
     jmp .main_finish                ; exit 
 
 .main_finish:
-    test r8, r9          
+    cmp r8, rbx          
     je .exit                        ; if i == n -> we can finish
     mov r11, r8                     ; r11 = r8 = i 
     inc r11
@@ -181,7 +181,7 @@ nsqrt:
     SET_BIT r13, r11, rbx, al
     jmp .main_loop
 .compare: 
-    mov r11, r9             ; set r11 = j = BlockCount for compare_loop
+    mov r11, r15            ; set r11 = j = BlockCount for compare_loop
 
     test r10, r10           ; check if r10 = 0
     setz al                 ; al = 1 if r10 = 0
@@ -216,6 +216,7 @@ nsqrt:
     
     mov rdi, [r14 + rcx * BLOCK_SIZE]   ; get X[j + block_move]
     sub rdi, rax                        ; X[j + block_move] - (j-th block)
+    jc .compare_exit                    ; result < 0 we go to compare exit
     test rdi, rdi                       ; if result != 0 -> we have answer
     jnz .compare_exit
 
@@ -225,19 +226,25 @@ nsqrt:
     jmp .compare_loop
 
 .compare_exit:
-    cmp     rdi, 0
     setae   al                         ; al = 1 if signed (X–v)>=0, else 0
     movzx   rax, al                    ; RAX = 0 or 1
     jmp .main_check
 
 .substract:
+    mov r12, r15                       ; r12 = block_count
+    test r10, r10                      ; check if r10 = 0
+    setz al                            ; al = 1 if r10 = 0
+    movzx rax, al                      ; zero-extend al to rax (or use mov rax, al if you're sure al is 0 or 1)
+    sub r12, rax                       ; subtract 1 or 0 from r11
+
     xor r11, r11                       ; j = 0
     clc                                ; CF = 0
+                    
 
 .substract_loop_check: 
     jc .substract_loop                 ; if Cf = 1 -> loop again
-    cmp r11, r15                       ; check j < n
-    jl .substract_loop                 ; if j < n -> loop again
+    cmp r15, r11                       ; check j != block_count
+    jne .substract_loop                ; if j != block_count -> loop again
     jmp .exit_substract_loop
 
 .substract_loop:

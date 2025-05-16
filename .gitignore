@@ -1,6 +1,6 @@
 #object files
 *.o
-
+\vscode
 #execs
 *.exe 
 nsqrt_example_64
