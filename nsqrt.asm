@@ -244,7 +244,7 @@ nsqrt:
 .substract_loop_check: 
     jc .substract_loop                 ; if Cf = 1 -> loop again
     cmp r15, r11                       ; check j != block_count
-    jne .substract_loop                ; if j != block_count -> loop again
+    jae .substract_loop                ; if block_count >= j -> loop again
     jmp .exit_substract_loop
 
 .substract_loop:
