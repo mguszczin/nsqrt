@@ -116,6 +116,7 @@ nsqrt:
 ; rsi = store cf value 
     mov r10, r15                ; r10 = block_count
     xor rax, rax                ; clear RAX
+    test rcx, RCX               ; set zero flag
     setz al                     ; AL = 1 if RCX == 0
     sub r10, rax                ; r10 = block_count - [rcx == 0]
     
@@ -144,7 +145,7 @@ nsqrt:
 
     inc rdi                      ; if n - i + 1 == 1 && j == 0 -> Q[j]++ 
 .subtract_blocks:
-    add sil, sil                  ; sets cf value 
+    bt rsi, 0                    ; CF <- (SIL >> 0) & 1
     lea rdx, [r11 + r9]           ; set temp j + block_move
     ; X[j + block_move] - calculated_block
     sbb [r14 + rdx * 8], rdi

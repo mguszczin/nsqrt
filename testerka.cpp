@@ -18,6 +18,12 @@ using std::chrono::duration_cast;
 using std::chrono::milliseconds;
 using uint2n_t = boost::multiprecision::mpz_int;
 
+void print_ones(size_t cnt, uint64_t x) {
+  for(int i = 0; i < 64; i++) {
+    uint64_t w = 1ULL << i;
+    if(w & x) cout << cnt * 64 + i << " ";
+  }
+}
 namespace {
   // Funkcje konwertujÄce sÄ jawnie podane, aby pokazaÄ,
   // jakiego kodowania liczb wymaga funkcja nsqrt.
@@ -26,8 +32,10 @@ namespace {
   void convert2bin(T in, uint64_t *out, size_t n) {
     for (size_t i = 0; i < n; ++i) {
       out[i] = (uint64_t)(in & UINT64_MAX);
+      print_ones(i, out[i]);
       in >>= 64;
     }
+    cout << std::endl;
   }
 
   template<typename T>
@@ -58,6 +66,9 @@ void testuj(uint2n_t X, unsigned n){
 
   cout << "n = " << n << "\n"
        << "X = " << X << "\n";
+  if(X == 0) {
+    cout << "NOW\n";
+  }
 
   uint64_t *x = new uint64_t[n/32], *q = new uint64_t[n/64];
 
@@ -81,8 +92,6 @@ void testuj(uint2n_t X, unsigned n){
 
   bool git = (Q >= 0 && Q * Q <= X && Q * Q + Q >= X - Q);
   if(!git){
-      cout <<  uint2n_t(Q * Q - X) << " pierwsze wartosść\n";
-      cout << bool(Q * Q + Q >= X - Q) << "DRUGA WARTOSC\n";
       cout << "Nie dziaĹa dla:\n";
       cout << X << "\n";
       cout << "Zwraca:\n";
@@ -133,17 +142,20 @@ int main(){
 
     unsigned n_duze = 256000;
     unsigned n_male = 640;
-
-    for(int i = 0; i < int(1e4); ++i){
+  /*
+   for(int i = 0; i < int(1e4); ++i){
         testuj(i, n_male);
     }
-
-    testuj(uint2n_t(1)<<200, n_male);
+  */
+    /*
+     testuj(uint2n_t(1)<<200, n_male);
     testuj((uint2n_t(1)<<200)-1, n_male);
     testuj(uint2n_t(1)<<(64*5), n_male);
     testuj((uint2n_t(1)<<(64*5))-1, n_male);
+    */
 
     for(int i = 0; i < int(1e4); ++i){
+        cout << i << "= i" << std::endl;
         testuj(losuj2n(n_male), n_male);
         uint2n_t t = losuj2n(n_male/2);
         t *= t;
