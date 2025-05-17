@@ -1,109 +1,6 @@
-global nsqrt
-
-%macro CALC_BLOCK 6
-    ; %1 = pointer to Q 
-    ; %2 = index of calculated block (i)
-    ; %3 = how many bits to shift (0 <= shift < 64)
-    ; %4 = total bit count (n)
-    ; %5 = output register
-    ; %6 = j from 2^{n - j + 1} (for edge case)
-    ; this macro uses rax, rcx, rdx, rdi (caller must preserve if needed)
-
-    mov rax, %4
-    shr rax, 6                      ; get block_count
-    cmp %2, rax 
-    je %%only_prev                  ; if i == block_count then only Q[i - 1]        
-    ja %%debug_info
-    mov %5, [%1 + 8*%2]             ; r = Q[i]
-    jmp %%shift
-
-%%only_prev:
-    xor %5, %5                      ; r = 0 (Q[i] = 0)
- 
-%%shift:
-    test %3, %3
-    jz %%done                       ; if shift == 0, skip rest
-
-    mov rax, %5                     ; rax = Q[i] or 0
-    mov rcx, %3                     ; rcx = shift 
-    shl rax, cl                     ; rax = Q[i] << shift
-
-    cmp %2, 0
-    je %%no_prev                    ; if i == 0 -> no Q[i - 1]
-
-    mov rdi, [%1 + 8*%2 - 8]        ; rdi = Q[i - 1]
-    mov rdx, 64
-    sub rdx, %3
-    mov cl, dl                      ; cl = (64 - shift)
-    shr rdi, cl                     ; rdi >> (64 - shift)
-
-    or  rax, rdi                    ; get final value 
-    mov %5, rax           
-    jmp %%done
-%%debug_info: 
-    mov rcx, 1
-%%no_prev:
-    mov %5, rax                     ; just use shifted Q[i] (Q[i - 1] = 0)
-    cmp %6, %4                      ; if j == n &&i == 0 we have edge case
-    jne %%done
-    inc %5                          ; final block++       
-%%done:
-%endmacro
-
-%macro SET_BIT 4
-    ; %1 = output pointer
-    ; %2 = bit index
-    ; %3 = total bits
-    ; %4 = bit value (0 or 1), must be in a register
-    ; temp register (clobbers: rsi, rcx, rdx, rdi)
-
-    mov rsi, %3            ; rsi = n
-    sub rsi, %2            ; rsi = n - i
-    mov rcx, rsi           ; rcx = bit index in block
-
-    shr rsi, 6             ; rsi = block index (n - i)/64
-    and rcx, BLOCK_MODULO  ; rcx = bit_position in block (0–63) (n - i) % 64
-
-    mov rdi, 1
-    shl rdi, cl            ; rdi = 1 << bit_position
-
-    mov rdx, [%1 + rsi*8]  ; load target Q[block_index]
-
-    test %4, %4
-    jz %%clear_bit
-
-    or rdx, rdi           ; set the bit
-    jmp %%store
-
-%%clear_bit:
-    not rdi
-    and rdx, rdi           ; clear the bit
-
-%%store:
-    mov [%1 + rsi*8], rdx  ; store updated block
-%endmacro
-
-section .rodata
-
-BLOCK_MODULO equ 63  ; value to get modulo of 64
-BLOCK_SIZE equ 8     ; size of block 
+global nsqrt 
 
 section .text
-
-; void get_zero(uint64_t *Q, uint64_t blockCount)
-; rdi = Q, rsi = blockCount
-; sets all 64-bit blocks to zero 
-get_zero:
-    xor rcx, rcx                        ; rcx = i = 0
-.loop:
-    cmp rcx, rsi                        ; i < blockCount
-    jge .exit                           ; exit loop 
-    mov qword [rdi + rcx*8], 0          ; get the i-th block
-    inc rcx                             ; i++
-    jmp .loop                           ; get back
-.exit:
-    ret        
-
 ; void nsqrt(uint64_t *Q, uint64_t *X, uint64_t n)
 ; rdi = pointer to result 
 ; rsi = pointer to input value
@@ -116,161 +13,174 @@ get_zero:
 ; r14 = X (pointer to Q)
 ; r15 = block_count (n / 64)
 nsqrt:
-    ; push all the callee safe registers on stack
-    push    rbx
-    push    r13
-    push    r14
-    push    r15
+    push rbx
+    push r13
+    push r14
+    push r15
 
-    ; set arguments for callee safe registers
     mov rbx, rdx            ; set n 
-    mov r13, rdi            ; set pointer to Q 
-    mov r14, rsi            ; set pointer to X
+    shr rdx, 6              ; n / 64 (block_count)
+    mov r15, rdx            ; set block_count
+    mov r13, rdi            ; set Q pointer
+    mov r14, rsi            ; set X pointer
 
-    ; set arguments for call_zero
-    mov rax, rdx            ; rax = n (bytes)
-    shr rax, 6              ; divide by 64 → 64-bit block count
-    mov rsi, rax            ; rsi = block count for get_zero
+    xor rax, rax            ; set rax = 0
+    mov rdi, r13            ; set rdi = Q
+    mov rcx, r15            ; set counter
+    rep stosq               ; set the Q = 0
 
-    mov r15, rsi            ; set block count
-    
-    sub rsp, 8              ; align stack to 16 bytes before call
-    call get_zero           ; rdi = Q, rsi = block count
-    add rsp, 8              ; restore alignment
-
-    mov r8, 0               ; set r8 = i = 0 for .main_loop
-
+    xor r8, r8              ; i = 0
+; MAIN LOOP
+; r8 = i = 1 .. n
+; r9 = (n - i + 1) / 64 (block_move)
+; rcx = (n - i + 1) % 64 (block_offset)
+; r12 = (n - i + 1)
 .main_loop:
-    mov r9, rbx             ; get n
-    sub r9, r8              ; get (n - i + 1)
-    shr r9, 6               ; set r9 to shift of T_{i - 1} / BLOCK_SIZE (block_move)
+    mov r12, rbx                
+    sub r12, r8                 ; r12 = n - i + 1
 
-    mov r10, rbx            ; get n
-    sub r10, r8             ; get (n - i + 1)
-    and r10, BLOCK_MODULO   ; set r10 to shift of T_{i - 1} % BLOCK_SIZE
+    mov r9, r12
+    shr r9, 6                   ; set r9 = (n - i + 1) / 64
 
-    inc r8                  ; i++
+    mov rcx, r12
+    and rcx, 63                 ; set rcx = (n - i + 1) % 64
 
-    mov r11, r8             ; r11 = r8 = i
-    cmp r8, rbx             ; check i == n          
-    je .compare             ; if i == n -> compare (edge case)
-    inc r11                 ; r11++ = i++ 
-    mov al, 1 
-    ;set 2^{n - i - 1} (4^n after moving)            
-    SET_BIT r13, r11, rbx, al
+    inc r8                      ; i++
 
-    jmp .compare            ; compare T_{i - 1} and R_{i - 1}
+    cmp rbx, r8                 ; check i == n
+    je .compare                 ; if i == n -> compare (edge case)
     
-.main_check:
-    test rax, rax         
-    jz .main_finish         ; if rax == 0 -> .main_finish
-    jmp .substract
+    lea r11, [r12 - 2]          ; r11 = n - i - 1
+    mov rax, r11
+    shr rax, 6                  ; rax = index = (n - i - 1) / 64
 
-.main_set_ans:
-    ; set 2^{n - i}
-    mov al, 1                       ; set bit to 1
-    SET_BIT r13, r8, rbx, al        ; Q, i, totalBits, value
-    jmp .main_finish                ; exit 
+    mov r10, r11
+    and r10, 63                 ; r10 = bit_in_block = (n - i - 1) % 64
 
-.main_finish:
-    cmp r8, rbx          
-    je .exit                        ; if i == n -> we can finish
-    mov r11, r8                     ; r11 = r8 = i 
-    inc r11
-    mov al, 0                       ; set bit to zero
+    bts qword [r13 + rax*8], r10; set 2^{n - i - 1} 
 
-    ;unset set 2^{n - i - 1} (4^n after moving)            
-    SET_BIT r13, r11, rbx, al
-    jmp .main_loop
-.compare: 
-    mov r11, r15            ; set r11 = j = BlockCount for compare_loop
+.compare:
+; r11 = j (block_count -> 0)
+; rax = Q[j]    (first)
+; rdx = Q[j - 1](second)
+; r10 = max_index
+    mov r11, r15                ; j = block_count 
+    mov rdx, 0                  ; set second = 0 
 
-    test r10, r10           ; check if r10 = 0
-    setz al                 ; al = 1 if r10 = 0
-    movzx rax, al           ; zero-extend al to rax (or use mov rax, al if you're sure al is 0 or 1)
-    sub r11, rax            ; subtract 1 or 0 from r11
-    
     ; handle some edge case where X[j + blockmove + 1] > 0
-    ; not sure if it happens
+    lea r10, [r15 * 2]          ; r10 = max_index = block_count * 2
+    lea rdi, [r11 + r9 + 1]     ; rdi = j + blockmove + 1 = idx
 
-    ; compute (idx) rax = j + block_move + 1
-    lea   rax, [r11 + r9 + 1]   
-    mov   rcx, r15           ; get block_count
-    shl   rcx, 1             ; rcx = 2 * block_count = totalWords
+    ; if(j + blockmove + 1 >= max_index) -> compare_calculate_offset
+    cmp rdi, r10               
+    jae .compare_calculate_offset
 
-    cmp   rax, rcx
-    jae   .compare_loop      ; if rax >= totalWords, skip edge-check
+    ; if we are in bounds
+    cmp qword[r14 + rdi*8], 0        ; check X[idx] > 0
+    jnz .compare_check          ; if (X[idx] > 0) -> .compare_check
+.compare_calculate_offset:
+    mov rax, rdx                ; first = second
 
-    ; load X[idx]
-    mov   rdx, [r14 + rax*BLOCK_SIZE]
-    test  rdx, rdx
-    jz    .compare_loop      ; if X[idx] == 0, no edge-case
+    cmp r11, 0                  ; check j == 0
+    je .compare_no_prev         ; if j == 0 -> compare_no_prev
 
-    mov   rax, 1             ; else X[idx] > 0 , we have answer
-    jmp   .main_check
+    mov rdx, [r13 + r11 * 8 - 8];second = Q[j - 1]
+    shld rax, rdx, cl          ;Calculate offset Q[i] and Q[i - 1]
+    jmp .compare_X_and_Q        
 
-.compare_loop:
-    ; use macro to calc j-th block
-    CALC_BLOCK r13, r11, r10, rbx, rax, r8 
+.compare_no_prev:
+    shl rax, cl                ; Calculate offset for single elem
 
-    mov rcx, r11            
-    add rcx, r9                         ; rcx = j + block_move 
+    cmp r12, 1                  ; check n - i + 1 == 1 (edge case)
+    jne .compare_X_and_Q        ; if (!check) -> compare
+    inc rax                     ; else first++
+.compare_X_and_Q:
+    lea rdi, [r11 + r9]         ; rdi = j + block_move 
+    cmp rdi, r10                ; if (j + block_move == max_index) -> compare_check
+    je .compare_check
+    cmp qword[r14 + rdi*8], rax      ; compare X[j + block_move], new_block
+.compare_check:
+    jc .main_exit               ; if X smaller we can stop merging
+    ja .subtract                ; if X bigger we can start subtracting
+
+    cmp r11, 0                
+    je .subtract                ; if j == 0 -> subtract
+    dec r11                     ; else j-- and continue loop
+
+    jmp .compare_calculate_offset
+.subtract:
+; r10 = block_count - [rcx == 0]
+; r11 = j (from 0 -> max | CF = 1)
+; rax = Q[j]    (first)
+; rdx = Q[j - 1](second)
+; rsi = store cf value 
+    mov r10, r15                ; r10 = block_count
+    xor rax, rax                ; clear RAX
+    setz al                     ; AL = 1 if RCX == 0
+    sub r10, rax                ; r10 = block_count - [rcx == 0]
     
-    mov rdi, [r14 + rcx * BLOCK_SIZE]   ; get X[j + block_move]
-    sub rdi, rax                        ; X[j + block_move] - (j-th block)
-    jc .compare_exit                    ; result < 0 we go to compare exit
-    test rdi, rdi                       ; if result != 0 -> we have answer
-    jnz .compare_exit
+    xor r11, r11                ; set j = 0
+    xor rax, rax                ; first = 0
+    xor rsi, rsi                ; rsi = 0 (CF equal to zero)
 
-    test r11, r11
-    jz .compare_exit                    ; if j == 0 finish
-    dec r11                             ; j--
-    jmp .compare_loop
+.calc_first_and_second:
+    mov rdx, rax                ; second = first 
+    xor rax, rax                ; first = 0
 
-.compare_exit:
-    setae   al                         ; al = 1 if signed (X–v)>=0, else 0
-    movzx   rax, al                    ; RAX = 0 or 1
-    jmp .main_check
+    cmp r11, r15                ; check j >= block_count 
+    jae .calc_block             ; if (j >= block_count) -> subtract_block
 
-.substract:
-    mov r12, r15                       ; r12 = block_count
-    test r10, r10                      ; check if r10 = 0
-    setz al                            ; al = 1 if r10 = 0
-    movzx rax, al                      ; zero-extend al to rax (or use mov rax, al if you're sure al is 0 or 1)
-    sub r12, rax                       ; subtract 1 or 0 from r12
+    mov rax, [r13 + r11*8]      ; first = Q[j]
+.calc_block:
+    mov rdi, rax                ; set temp first block
+    shld rdi, rdx, cl           ; calc block to be substracted
 
-    xor r11, r11                       ; j = 0
-    clc                                ; CF = 0
-                    
+    ; solve edge case
+    test r11, r11                ; check j == 0
+    jnz .subtract_blocks         
 
-.substract_loop_check: 
-    jc .substract_loop                 ; if Cf = 1 -> loop again
-    cmp r12, r11                       ; check j != block_count
-    jae .substract_loop                ; if block_count >= j -> loop again
-    jmp .exit_substract_loop
+    cmp r12, 1                   ; check n - i + 1 == 1 (edge case)
+    jne .subtract_blocks         
 
-.substract_loop:
-    ; macro to get j-th block
-    CALC_BLOCK r13, r11, r10, rbx, rax, r8 
+    inc rdi                      ; if n - i + 1 == 1 && j == 0 -> Q[j]++ 
+.subtract_blocks:
+    add sil, sil                  ; sets cf value 
+    lea rdx, [r11 + r9]           ; set temp j + block_move
+    ; X[j + block_move] - calculated_block
+    sbb [r14 + rdx * 8], rdi
+    setc sil                     ; remember CF value 
+.subtract_check:
+    inc r11                     ; j++
+    jc .calc_first_and_second   ; CF = 1 repeat
 
-    mov rcx, r11
-    add rcx, r9                        ; rcx = j + block_move
+    cmp r10, r11              
+    jae .calc_first_and_second  ; if(max >= j) -> loop again
+.bit_set:
+    lea r11, [r12 - 1]          ; r11 = n - i
+    mov rax, r11
+    shr rax, 6                  ; rax = index = (n - i) / 64
 
-    mov rdi, [r14 + rcx * BLOCK_SIZE]  ; get X[j + block_move]
-    sbb rdi, rax                       ; X[j + block_move] - (j-th block) - flag
-    mov [r14 + rcx * BLOCK_SIZE], rdi  ; new value of X[j + block_move]
+    mov r10, r11
+    and r10, 63                 ; r10 = bit_in_block = (n - i) % 64
 
-    inc r11                            ; j++
-    jmp .substract_loop_check          ; check conditions
+    bts qword [r13 + rax*8], r10; set 2^{n - i} 
 
-.exit_substract_loop:
-    jmp .main_set_ans             
+.main_exit:
+    cmp r8, rbx                 ; if i == n exit
+    je .exit
+    
+    lea r11, [r12 - 2]          ; r11 = n - i - 1
+    mov rax, r11
+    shr rax, 6                  ; rax = index = (n - i - 1) / 64
 
+    mov r10, r11
+    and r10, 63                 ; r10 = bit_in_block = (n - i - 1) % 64
+
+    btr qword [r13 + rax*8], r10; unset 2^{n - i - 1} 
+    jmp .main_loop
 .exit:
-    ; get back to the old value of callee safe registers
-    pop     r15
-    pop     r14
-    pop     r13
-    pop     rbx
-    ret
-
+    pop rbx
+    pop r13
+    pop r14
+    pop r15
+    ret 
