@@ -69,15 +69,6 @@ nsqrt:
 
     ; handle some edge case where X[j + blockmove + 1] > 0
     lea r10, [r15 * 2]          ; r10 = max_index = block_count * 2
-    lea rdi, [r11 + r9 + 1]     ; rdi = j + blockmove + 1 = idx
-
-    ; if(j + blockmove + 1 >= max_index) -> compare_calculate_offset
-    cmp rdi, r10               
-    jae .compare_calculate_offset
-
-    ; if we are in bounds
-    cmp qword[r14 + rdi*8], 0        ; check X[idx] > 0
-    jnz .compare_check          ; if (X[idx] > 0) -> .compare_check
 .compare_calculate_offset:
     mov rax, rdx                ; first = second
 
