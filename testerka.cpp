@@ -81,7 +81,7 @@ void testuj(uint2n_t X, unsigned n){
 
   bool git = (Q >= 0 && Q * Q <= X && Q * Q + Q >= X - Q);
   if(!git){
-      cout <<  bool(Q * Q <= X) << " pierwsze wartosść\n";
+      cout <<  uint2n_t(Q * Q - X) << " pierwsze wartosść\n";
       cout << bool(Q * Q + Q >= X - Q) << "DRUGA WARTOSC\n";
       cout << "Nie dziaĹa dla:\n";
       cout << X << "\n";
