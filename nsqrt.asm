@@ -14,6 +14,7 @@ section .text
 ; r15 = block_count (n / 64)
 nsqrt:
     push rbx
+    push r12
     push r13
     push r14
     push r15
@@ -182,5 +183,6 @@ nsqrt:
     pop r15
     pop r14
     pop r13
+    pop r12
     pop rbx
     ret 

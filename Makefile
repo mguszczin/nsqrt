@@ -1,32 +1,29 @@
-# Compiler and assembler
-CC      = gcc
+# Makefile: Debug and Release builds
+
+# Compiler and assembler\ nCC      = gcc
 CXX     = g++
 NASM    = nasm
 
-# AddressSanitizer flags for debug
+# AddressSanitizer flags (optional for debug)
 SAN_FLAGS = -fsanitize=address -fno-omit-frame-pointer
 
 # Base flags
-BASE_CFLAGS    = -Wall -Wextra -std=c17
-BASE_CXXFLAGS  = -Wall -Wextra -std=c++20
-BASE_NASMFLAGS = -f elf64 -w+all -w+error
-BASE_LDFLAGS   = -z noexecstack
+BASE_CFLAGS   = -Wall -Wextra -std=c17
+BASE_CXXFLAGS = -Wall -Wextra -std=c++20
+BASE_NASMFLAGS= -f elf64 -g -F dwarf -w+all -w+error
+BASE_LDFLAGS  = -z noexecstack
 
-# Build type: 'release' or 'debug'
-BUILD ?= release
+# Debug configuration
+DEBUG_CFLAGS   = $(BASE_CFLAGS) -O0 -g3 $(SAN_FLAGS)
+DEBUG_CXXFLAGS = $(BASE_CXXFLAGS) -O0 -g3 $(SAN_FLAGS)
+DEBUG_NASMFLAGS= $(BASE_NASMFLAGS)
+DEBUG_LDFLAGS  = $(BASE_LDFLAGS) $(SAN_FLAGS)
 
-# Flags based on build type
-ifeq ($(BUILD),debug)
-	CFLAGS    = $(BASE_CFLAGS) -O0 -g3 $(SAN_FLAGS)
-	CXXFLAGS  = $(BASE_CXXFLAGS) -O0 -g3 $(SAN_FLAGS)
-	NASMFLAGS = $(BASE_NASMFLAGS) -g -F dwarf
-	LDFLAGS   = $(BASE_LDFLAGS) $(SAN_FLAGS) -g
-else
-	CFLAGS    = $(BASE_CFLAGS) -O2
-	CXXFLAGS  = $(BASE_CXXFLAGS) -O2
-	NASMFLAGS = $(BASE_NASMFLAGS)
-	LDFLAGS   = $(BASE_LDFLAGS)
-endif
+# Release configuration
+RELEASE_CFLAGS   = $(BASE_CFLAGS) -O2
+RELEASE_CXXFLAGS = $(BASE_CXXFLAGS) -O2
+RELEASE_NASMFLAGS= $(BASE_NASMFLAGS)
+RELEASE_LDFLAGS  = $(BASE_LDFLAGS)
 
 # Sources and objects
 ASM_SRC       = nsqrt.asm
@@ -46,32 +43,39 @@ TEST_BIN      = testerka
 
 .PHONY: all debug release clean
 
-# Default to release
+# Default to release build
 all: release
 
-debug:
-	$(MAKE) all BUILD=debug
+# Build debug targets
+debug: CFLAGS   = $(DEBUG_CFLAGS)
+debug: CXXFLAGS = $(DEBUG_CXXFLAGS)
+debug: NASMFLAGS= $(DEBUG_NASMFLAGS)
+debug: LDFLAGS  = $(DEBUG_LDFLAGS)
+debug: $(C_BIN) $(CPP_BIN) $(TEST_BIN)
 
-release:
-	$(MAKE) build BUILD=release
+# Build release targets
+release: CFLAGS   = $(RELEASE_CFLAGS)
+release: CXXFLAGS = $(RELEASE_CXXFLAGS)
+release: NASMFLAGS= $(RELEASE_NASMFLAGS)
+release: LDFLAGS  = $(RELEASE_LDFLAGS)
+release: $(C_BIN) $(CPP_BIN) $(TEST_BIN)
 
-build: $(C_BIN) $(CPP_BIN) $(TEST_BIN)
-
-# Assemble
+# Assemble nsqrt.asm
 $(ASM_OBJ): $(ASM_SRC)
 	$(NASM) $(NASMFLAGS) -o $@ $<
 
-# Compile
+# Compile C sources
 $(C_OBJ): $(C_SRC)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+# Compile C++ sources
 $(CPP_OBJ): $(CPP_SRC)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 $(TEST_CPP_OBJ): $(TEST_CPP_SRC)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-# Link
+# Link executables
 $(C_BIN): $(C_OBJ) $(ASM_OBJ)
 	$(CC) $(LDFLAGS) -o $@ $^
 
@@ -81,6 +85,6 @@ $(CPP_BIN): $(CPP_OBJ) $(ASM_OBJ)
 $(TEST_BIN): $(TEST_CPP_OBJ) $(ASM_OBJ)
 	$(CXX) $(LDFLAGS) -o $@ $^ -lgmp
 
-# Clean
+# Clean build artifacts
 clean:
 	rm -f $(ASM_OBJ) $(C_OBJ) $(CPP_OBJ) $(TEST_CPP_OBJ) $(C_BIN) $(CPP_BIN) $(TEST_BIN)
