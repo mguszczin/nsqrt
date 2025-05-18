@@ -25,9 +25,8 @@ nsqrt:
     mov r14, rsi            ; set X pointer
 
     xor rax, rax            ; set rax = 0
-    mov rdi, r13            ; set rdi = Q
     mov rcx, r15            ; set counter
-    rep stosq               ; set the Q = 0
+    rep stosq               ; set the Q = 0 / rdi = Q
 
     xor r8, r8              ; i = 0
 ; MAIN LOOP
@@ -69,6 +68,15 @@ nsqrt:
 
     ; handle some edge case where X[j + blockmove + 1] > 0
     lea r10, [r15 * 2]          ; r10 = max_index = block_count * 2
+    lea rdi, [r11 + r9 + 1]     ; rdi = j + blockmove + 1 = idx
+
+    ; if(j + blockmove + 1 >= max_index) -> compare_calculate_offset
+    cmp rdi, r10               
+    jae .compare_calculate_offset
+
+    ; if we are in bounds
+    cmp qword[r14 + rdi*8], 0        ; check X[idx] > 0
+    jnz .compare_check          ; if (X[idx] > 0) -> .compare_check
 .compare_calculate_offset:
     mov rax, rdx                ; first = second
 
@@ -171,8 +179,8 @@ nsqrt:
     btr qword [r13 + rax*8], r10; unset 2^{n - i - 1} 
     jmp .main_loop
 .exit:
-    pop rbx
-    pop r13
-    pop r14
     pop r15
+    pop r14
+    pop r13
+    pop rbx
     ret 

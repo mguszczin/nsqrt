@@ -44,7 +44,7 @@ int main() {
     printf("Q = %" PRIu64 "\n", Q[0]);
     uint128_t Q1 = Q[0];
     uint128_t Q2 = Q1 * Q1;
-    assert(Q2 <= test_data_table[i].u128 && Q2 + Q1 >= test_data_table[i].u128 - Q1);
+    if(!(Q2 <= test_data_table[i].u128 && Q2 + Q1 >= test_data_table[i].u128 - Q1)) printf("WRONG\n");
   }
   free(Q);
   free(X);

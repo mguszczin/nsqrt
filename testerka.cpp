@@ -18,12 +18,6 @@ using std::chrono::duration_cast;
 using std::chrono::milliseconds;
 using uint2n_t = boost::multiprecision::mpz_int;
 
-void print_ones(size_t cnt, uint64_t x) {
-  for(int i = 0; i < 64; i++) {
-    uint64_t w = 1ULL << i;
-    if(w & x) cout << cnt * 64 + i << " ";
-  }
-}
 namespace {
   // Funkcje konwertujÄce sÄ jawnie podane, aby pokazaÄ,
   // jakiego kodowania liczb wymaga funkcja nsqrt.
@@ -32,7 +26,6 @@ namespace {
   void convert2bin(T in, uint64_t *out, size_t n) {
     for (size_t i = 0; i < n; ++i) {
       out[i] = (uint64_t)(in & UINT64_MAX);
-      print_ones(i, out[i]);
       in >>= 64;
     }
     cout << std::endl;
