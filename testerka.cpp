@@ -26,6 +26,7 @@ namespace {
   void convert2bin(T in, uint64_t *out, size_t n) {
     for (size_t i = 0; i < n; ++i) {
       out[i] = (uint64_t)(in & UINT64_MAX);
+
       in >>= 64;
     }
     cout << std::endl;

@@ -67,17 +67,7 @@ nsqrt:
     mov r11, r15                ; j = block_count 
     mov rdx, 0                  ; set second = 0 
 
-    ; handle some edge case where X[j + blockmove + 1] > 0
     lea r10, [r15 * 2]          ; r10 = max_index = block_count * 2
-    lea rdi, [r11 + r9 + 1]     ; rdi = j + blockmove + 1 = idx
-
-    ; if(j + blockmove + 1 >= max_index) -> compare_calculate_offset
-    cmp rdi, r10               
-    jae .compare_calculate_offset
-
-    ; if we are in bounds
-    cmp qword[r14 + rdi*8], 0        ; check X[idx] > 0
-    jnz .compare_check          ; if (X[idx] > 0) -> .compare_check
 .compare_calculate_offset:
     mov rax, rdx                ; first = second
 
@@ -114,12 +104,6 @@ nsqrt:
 ; rax = Q[j]    (first)
 ; rdx = Q[j - 1](second)
 ; rsi = store cf value 
-    mov r10, r15                ; r10 = block_count
-    xor rax, rax                ; clear RAX
-    test rcx, RCX               ; set zero flag
-    setz al                     ; AL = 1 if RCX == 0
-    sub r10, rax                ; r10 = block_count - [rcx == 0]
-    
     xor r11, r11                ; set j = 0
     xor rax, rax                ; first = 0
     xor rsi, rsi                ; rsi = 0 (CF equal to zero)
@@ -154,7 +138,7 @@ nsqrt:
     inc r11                     ; j++
     jc .calc_first_and_second   ; CF = 1 repeat
 
-    cmp r10, r11              
+    cmp r15, r11              
     jae .calc_first_and_second  ; if(max >= j) -> loop again
 .bit_set:
     lea r11, [r12 - 1]          ; r11 = n - i
