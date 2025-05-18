@@ -48,21 +48,15 @@ void testuj(uint2n_t X, unsigned n){
   long k = stol(args[1]);
   unsigned n = k;
   uint2n_t X(args[2]), Q;
-
+ */
   if (X < 0)
     X += uint2n_t(1) << 2 * n;
-  */
+  
   uint2n_t Q;
 
   //assert(k % 64 == 0 && k >= 64 && k <= 256000);
   assert(n % 64 == 0 && n >= 64 && n <= 256000);
   assert(X >= 0 && X < uint2n_t(1) << 2 * n);
-
-  cout << "n = " << n << "\n"
-       << "X = " << X << "\n";
-  if(X == 0) {
-    cout << "NOW\n";
-  }
 
   uint64_t *x = new uint64_t[n/32], *q = new uint64_t[n/64];
 
@@ -147,8 +141,8 @@ int main(){
     testuj(uint2n_t(1)<<(64*5), n_male);
     testuj((uint2n_t(1)<<(64*5))-1, n_male);
     */
-
-    for(int i = 0; i < int(1e4); ++i){
+    testuj(-1, n_duze);
+    for(int i = 0; i < 1e7; ++i){
         cout << i << "= i" << std::endl;
         testuj(losuj2n(n_male), n_male);
         uint2n_t t = losuj2n(n_male/2);
@@ -157,7 +151,7 @@ int main(){
         testuj(t-1, n_male);
     }
 
-    for(int i = 0; i <3; ++i){
+    for(int i = 0; i <0; ++i){
         testuj(losuj2n(n_duze), n_duze);
         uint2n_t t = losuj2n(n_duze/2);
         t *= t;

@@ -50,14 +50,12 @@ nsqrt:
     cmp rbx, r8                 ; check i == n
     je .compare                 ; if i == n -> compare (edge case)
     
-    lea r11, [r12 - 2]          ; r11 = n - i - 1
-    mov rax, r11
-    shr rax, 6                  ; rax = index = (n - i - 1) / 64
-
-    mov r10, r11
-    and r10, 63                 ; r10 = bit_in_block = (n - i - 1) % 64
-
-    bts qword [r13 + rax*8], r10; set 2^{n - i - 1} 
+    ; now unset the *previous* bit: index = (n‑i‑1)/64, bit = (n‑i‑2)%64
+    lea   r11, [r12 - 2]       ; r11 = n‑i‑1
+    mov   r10, r11             ; copy for the bit‑index
+    and   r10, 63              ; r10 = (n‑i‑1) % 64
+    shr   r11,   6             ; r11 = (n‑i‑1) / 64
+    bts   qword [r13 + r11*8], r10
 
 .compare:
 ; r11 = j (block_count -> 0)
@@ -141,27 +139,21 @@ nsqrt:
     cmp r15, r11              
     jae .calc_first_and_second  ; if(max >= j) -> loop again
 .bit_set:
-    lea r11, [r12 - 1]          ; r11 = n - i
-    mov rax, r11
-    shr rax, 6                  ; rax = index = (n - i) / 64
-
-    mov r10, r11
-    and r10, 63                 ; r10 = bit_in_block = (n - i) % 64
-
-    bts qword [r13 + rax*8], r10; set 2^{n - i} 
-
+    lea   r11, [r12 - 1]       ; r11 = n‑i‑1
+    mov   r10, r11             ; copy for the bit‑index
+    and   r10, 63              ; r10 = (n‑i‑1) % 64
+    shr   r11, 6               ; r11 = (n‑i‑1) / 64
+    bts   qword [r13 + r11*8], r10
 .main_exit:
     cmp r8, rbx                 ; if i == n exit
     je .exit
     
-    lea r11, [r12 - 2]          ; r11 = n - i - 1
-    mov rax, r11
-    shr rax, 6                  ; rax = index = (n - i - 1) / 64
-
-    mov r10, r11
-    and r10, 63                 ; r10 = bit_in_block = (n - i - 1) % 64
-
-    btr qword [r13 + rax*8], r10; unset 2^{n - i - 1} 
+    ; now unset the *previous* bit: index = (n‑i‑1)/64, bit = (n‑i‑2)%64
+    lea   r11, [r12 - 2]       ; r11 = n‑i‑1
+    mov   r10, r11             ; copy for the bit‑index
+    and   r10, 63              ; r10 = (n‑i‑1) % 64
+    shr   r11,   6             ; r11 = (n‑i‑1) / 64
+    btr   qword [r13 + r11*8], r10
     jmp .main_loop
 .exit:
     pop r15
