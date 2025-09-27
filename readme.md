@@ -19,25 +19,25 @@ You can compile the source file using
 ```c
 nasm -f elf64 -w+all -w+error -o nsqrt.o nsqrt.asm
 ```
-and after that you can link the object file. For example: 
+after that you can create executable. For example: 
 ```c
-gcc -o nsqrt_example_64.o foo.c
+gcc foo.c nsqrt.asm -o foo
 ```
 ### Algorithm Description
 
 The algorithm computes the integer square root iteratively, one bit at a time. Let  
 
 $$
-Q_j = \sum_{i=1}^{j} q_i \, 2^{\,n-i}, \quad q_i \in \{0,1\},
+Q_j = \sum_{i=1}^{j} q_i \, 2^{\,n-i}, \quad q_i \in {0,1},
 $$  
 
-represent the partial result after \(j\) iterations, and let \(R_j\) be the remainder after \(j\) iterations. Initialize  
+represent the partial result after $j$ iterations, and let $R_j$ be the remainder after $j$ iterations. Initialize  
 
 $$
 Q_0 = 0, \quad R_0 = X.
 $$
 
-At iteration \(j\), compute the bit \(q_j\) of the result using  
+At iteration $j$ , compute the bit $q_j$ of the result using  
 
 $$
 T_{j-1} = 2^{\,n-j+1} Q_{j-1} + 4^{\,n-j}.
@@ -55,7 +55,7 @@ q_j =
 R_j = R_{j-1} - q_j \, T_{j-1}.
 $$  
 
-After \(n\) iterations, the final remainder satisfies  
+After $n$ iterations, the final remainder satisfies  
 
 $$
 R_n = X - Q_n^2, \quad 0 \le R_n \le 2 Q_n.
