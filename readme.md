@@ -23,28 +23,40 @@ and after that you can link the object file. For example:
 ```c
 gcc -o nsqrt_example_64.o foo.c
 ```
-## Algorithm description
-The algorithm computes the result iteratively. Let 
-\[
-Q_j = \sum_{i=1}^{j} q_i 2^{n-i},
-\] 
-where \(q_i \in \{0,1\}\) represents the bit determined in the \(i\)-th iteration, and \(R_j\) is the remainder after \(j\) iterations. We initialize \(Q_0 = 0\) and \(R_0 = X\). 
+### Algorithm Description
 
-In iteration \(j\), we compute the bit \(q_j\) of the result. Define 
-\[
-T_{j-1} = 2^{n-j+1} Q_{j-1} + 4^{n-j}.
-\] 
+The algorithm computes the integer square root iteratively, one bit at a time. Let  
 
-If \(R_{j-1} \ge T_{j-1}\), set \(q_j = 1\) and \(R_j = R_{j-1} - T_{j-1}\); otherwise, set \(q_j = 0\) and \(R_j = R_{j-1}\). This gives the recurrence:
-\[
-R_j = R_{j-1} - q_j (2^{n-j+1} Q_{j-1} + 4^{n-j}).
-\] 
-After \(n\) iterations, the final remainder is 
-\[
-R_n = X - Q_n^2.
-\] 
+$$
+Q_j = \sum_{i=1}^{j} q_i \, 2^{\,n-i}, \quad q_i \in \{0,1\},
+$$  
 
-It can be shown that 
-\[
-0 \le R_n \le 2 Q_n.
-\]
+represent the partial result after \(j\) iterations, and let \(R_j\) be the remainder after \(j\) iterations. Initialize  
+
+$$
+Q_0 = 0, \quad R_0 = X.
+$$
+
+At iteration \(j\), compute the bit \(q_j\) of the result using  
+
+$$
+T_{j-1} = 2^{\,n-j+1} Q_{j-1} + 4^{\,n-j}.
+$$ 
+
+Then  
+
+$$
+q_j =
+\begin{cases} 
+1 & \text{if } R_{j-1} \ge T_{j-1}, \\
+0 & \text{otherwise},
+\end{cases}
+\quad
+R_j = R_{j-1} - q_j \, T_{j-1}.
+$$  
+
+After \(n\) iterations, the final remainder satisfies  
+
+$$
+R_n = X - Q_n^2, \quad 0 \le R_n \le 2 Q_n.
+$$ 
