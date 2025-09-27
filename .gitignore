@@ -2,7 +2,8 @@
 *.o
 #dirs
 tests/
-#execs
+.vscode/
+#elfs
+*.o
+*.so
 *.exe 
-nsqrt_example_64
-nsqrt_example_cpp
